@@ -82,7 +82,7 @@ void uart_init(uint8_t* device) {
         // 8 data bits, 1 stop bit, no parity
         options.c_cflag &= ~PARENB;
         options.c_cflag &= ~CSTOPB;
-        options.c_c_cflag &= ~CSIZE;
+        options.c_cflag &= ~CSIZE;
         options.c_cflag |= CS8;
         
         // Enable receiver and ignore modem control lines
