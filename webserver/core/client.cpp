@@ -61,11 +61,11 @@ void uart_init(uint8_t* device) {
         // Initialize UART Connection
         global_uart_fd = open(device, O_RDWR | O_NOCTTY | O_NDELAY);
         sprintf(log_msg, "UART: Connection Initialize: => %d\n", global_uart_fd);
-        log(log_msg);
+        printf("%s", log_msg);
         if (global_uart_fd < 0) {
             perror("Error opening UART device");
             sprintf(log_msg, "UART: Connection Failed: => %d\n", global_uart_fd);
-            log(log_msg);
+            printf("%s", log_msg);
             return;
         }
 
@@ -108,16 +108,16 @@ int uart_send(uint8_t* message, uint8_t* device) {
         if (bytes_written < 0) {
             perror("Error writing to UART device");
             sprintf(log_msg, "UART: Error writing to device: => %d\n", global_uart_fd);
-            log(log_msg);
+            printf("%s", log_msg);
             return -1;
         } else {
             sprintf(log_msg, "UART: Sent %d bytes: => %s\n", bytes_written, message);
-            log(log_msg);
+            printf("%s", log_msg);
             return bytes_written;
         }
     } else {
         sprintf(log_msg, "UART: Device not initialized: => %d\n", global_uart_fd);
-        log(log_msg);
+        printf("%s", log_msg);
         return -1;
     }
 }
@@ -128,14 +128,14 @@ void *uart_listener_thread(void *arg) {
     while (1) {
         int bytes_read = read(global_uart_fd, buffer, sizeof(buffer) - 1);
         sprintf(log_msg, "UART: Connection Receive: => %d\n", bytes_read);
-        log(log_msg);
+        printf("%s", log_msg);
         if (bytes_read > 0) {
             buffer[bytes_read] = '\0'; // Null-terminate the received string
             // Lock the mutex to update shared data
             pthread_mutex_lock(&uart_mutex);
             strncpy(inputData, buffer, sizeof(inputData) - 1);
             sprintf(log_msg, "UART: Connection Receive: => %s\n", inputData);
-            log(log_msg);
+            printf("%s", log_msg);
             inputData[sizeof(inputData) - 1] = '\0'; // Safety null-termination
             dataReady = 1; // Set flag to indicate data is ready
             pthread_mutex_unlock(&uart_mutex);
@@ -168,12 +168,30 @@ int uart_listen(uint8_t* device, uint8_t* message, size_t buffer_size) {
     pthread_mutex_lock(&uart_mutex);
     if (dataReady) {
         sprintf(log_msg, "Received UART Data: => %s\n", inputData);
-        log(log_msg);
+        printf("%s", log_msg);
         printf("Received UART Data: %s\n", inputData);
         dataReady = 0; // Reset flag after processing
     }
     pthread_mutex_unlock(&uart_mutex);
     return 0;
+}
+
+// Test UART Loopback
+void test_uart_loopback() {
+    uint8_t device[] = UART_DEVICE;
+    uint8_t message[] = "Hello, UART!";
+    
+    // Send message
+    int result = uart_send(message, device);
+    if (result < 0) {
+        printf("Failed to send message\n");
+    } else {
+        printf("Message sent successfully\n");
+    }
+    
+    // Listen for response
+    sleep(1); // Wait for the message to be looped back
+    uart_listen(device, inputData, sizeof(inputData));
 }
 
 int receive_uart_communication(uint8_t* device, uint8_t* message, size_t buffer_size) {
@@ -320,4 +338,9 @@ int receive_tcp_message(uint8_t *msg_buffer, size_t buffer_size, int socket_id)
 int close_tcp_connection(int socket_id)
 {
     return close(socket_id);
+}
+
+int main() {
+    test_uart_loopback();
+    return 0;
 }
