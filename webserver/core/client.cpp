@@ -21,7 +21,6 @@
 // Thiago Alves, Nov 2022
 //-----------------------------------------------------------------------------
 
-
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <stdio.h>
@@ -56,7 +55,6 @@ unsigned char dataReady = 0;    // Flag for new data
 int uart_listening = -1; // Flag for listening UART
 char log_msg[1000];
 
-
 // UART Initialize
 void uart_init(uint8_t* device) {
     if(global_uart_fd < 0) {
@@ -68,11 +66,12 @@ void uart_init(uint8_t* device) {
             perror("Error opening UART device");
             sprintf(log_msg, "UART: Connection Failed: => %d\n", global_uart_fd);
             log(log_msg);
+            return;
         }
 
         // Configure UART settings
         struct termios options;
-        tcgetattr(fd, &options);
+        tcgetattr(global_uart_fd, &options);
 
         // Input baud rate
         cfsetispeed(&options, BAUD_RATE);
@@ -90,7 +89,7 @@ void uart_init(uint8_t* device) {
         options.c_cflag |= (CLOCAL | CREAD);
         
         // Set UART attributes
-        tcsetattr(fd, TCSANOW, &options);
+        tcsetattr(global_uart_fd, TCSANOW, &options);
 
         fcntl(global_uart_fd, F_SETFL, FNDELAY);
         // Initialize the mutex
@@ -100,13 +99,26 @@ void uart_init(uint8_t* device) {
 
 /** UART Communication Block */
 int uart_send(uint8_t* message, uint8_t* device) {
-    if(global_uart_fd < 0) {
+    if (global_uart_fd < 0) {
         uart_init(device);
-        write(global_uart_fd, message, strlen(message));
-        return global_uart_fd;
+    }
+    
+    if (global_uart_fd >= 0) {
+        int bytes_written = write(global_uart_fd, message, strlen(message));
+        if (bytes_written < 0) {
+            perror("Error writing to UART device");
+            sprintf(log_msg, "UART: Error writing to device: => %d\n", global_uart_fd);
+            log(log_msg);
+            return -1;
+        } else {
+            sprintf(log_msg, "UART: Sent %d bytes: => %s\n", bytes_written, message);
+            log(log_msg);
+            return bytes_written;
+        }
     } else {
-        write(global_uart_fd, message, strlen(message));
-        return global_uart_fd;
+        sprintf(log_msg, "UART: Device not initialized: => %d\n", global_uart_fd);
+        log(log_msg);
+        return -1;
     }
 }
 
@@ -161,6 +173,7 @@ int uart_listen(uint8_t* device, uint8_t* message, size_t buffer_size) {
         dataReady = 0; // Reset flag after processing
     }
     pthread_mutex_unlock(&uart_mutex);
+    return 0;
 }
 
 int receive_uart_communication(uint8_t* device, uint8_t* message, size_t buffer_size) {
@@ -190,16 +203,10 @@ int receive_uart_communication(uint8_t* device, uint8_t* message, size_t buffer_
     // Apply the configuration 
     tcsetattr(serial_fd, TCSANOW, &options);
 
-    char log_msg[1000];
-
     int bytes_read = read(serial_fd, message, buffer_size);  
     message[bytes_read] = 0;
 
-    // if(listening == 0) {
-    //     uart_listen(message, buffer_size);
-    // }
-    
-    return bytes_received;
+    return bytes_read;
 }
 
 int connect_to_tcp_server(uint8_t *ip_address, uint16_t port, int method)
@@ -275,15 +282,34 @@ int receive_tcp_message(uint8_t *msg_buffer, size_t buffer_size, int socket_id)
     char log_msg[1000];
     bytes_received = read(socket_id, msg_buffer, buffer_size);
     
-    if (bytes_received < 0 && bytes_received != EAGAIN && bytes_received != EWOULDBLOCK)
+    if (bytes_received < 0)
     {
-        //sprintf(log_msg, "TCP Client: error receiving msg from server => %s\n", strerror(errno));
-        //log(log_msg);
-        return -1;
+        if (errno == EAGAIN || errno == EWOULDBLOCK)
+        {
+            // Non-blocking mode - no data available
+            sprintf(log_msg, "TCP Client: no data available for reading (non-blocking mode)\n");
+            log(log_msg);
+            return 0;
+        }
+        else
+        {
+            // Other errors
+            sprintf(log_msg, "TCP Client: error receiving msg from server => %s\n", strerror(errno));
+            log(log_msg);
+            return -1;
+        }
+    }
+    else if (bytes_received == 0)
+    {
+        // Connection closed by the server
+        sprintf(log_msg, "TCP Client: connection closed by server\n");
+        log(log_msg);
+        return 0;
     }
     else
     {
-        msg_buffer[bytes_received] = 0;
+        // Successfully received data
+        msg_buffer[bytes_received] = 0; // Null-terminate the received string
         sprintf(log_msg, "TCP Client: msg from server => %s\n", msg_buffer);
         log(log_msg);
     }
@@ -295,25 +321,3 @@ int close_tcp_connection(int socket_id)
 {
     return close(socket_id);
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
