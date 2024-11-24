@@ -82,7 +82,7 @@ void uart_init(uint8_t* device) {
         // 8 data bits, 1 stop bit, no parity
         options.c_cflag &= ~PARENB;
         options.c_cflag &= ~CSTOPB;
-        options.c_cflag &= ~CSIZE;
+        options.c_c_cflag &= ~CSIZE;
         options.c_cflag |= CS8;
         
         // Enable receiver and ignore modem control lines
@@ -106,10 +106,17 @@ int uart_send(uint8_t* message, uint8_t* device) {
     if (global_uart_fd >= 0) {
         int bytes_written = write(global_uart_fd, message, strlen(message));
         if (bytes_written < 0) {
-            perror("Error writing to UART device");
-            sprintf(log_msg, "UART: Error writing to device: => %d, errno: %d\n", global_uart_fd, errno);
-            log(log_msg);
-            return -1;
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                // Non-blocking mode - no data available
+                sprintf(log_msg, "UART: Write would block, try again later\n");
+                log(log_msg);
+                return 0;
+            } else {
+                perror("Error writing to UART device");
+                sprintf(log_msg, "UART: Error writing to device: => %d, errno: %d\n", global_uart_fd, errno);
+                log(log_msg);
+                return -1;
+            }
         } else {
             sprintf(log_msg, "UART: Sent %d bytes: => %s\n", bytes_written, message);
             log(log_msg);
@@ -135,9 +142,15 @@ void *uart_listener_thread(void *arg) {
             dataReady = 1; // Set flag to indicate data is ready
             pthread_mutex_unlock(&uart_mutex);
         } else if (bytes_read < 0) {
-            perror("Error reading from UART device");
-            sprintf(log_msg, "UART: Error reading from device: => %d, errno: %d\n", global_uart_fd, errno);
-            log(log_msg);
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                // Non-blocking mode - no data available
+                sprintf(log_msg, "UART: Read would block, try again later\n");
+                log(log_msg);
+            } else {
+                perror("Error reading from UART device");
+                sprintf(log_msg, "UART: Error reading from device: => %d, errno: %d\n", global_uart_fd, errno);
+                log(log_msg);
+            }
         }
         usleep(1000); // Short sleep to avoid busy waiting
     }
