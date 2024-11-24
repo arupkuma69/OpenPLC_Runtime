@@ -339,8 +339,3 @@ int close_tcp_connection(int socket_id)
 {
     return close(socket_id);
 }
-
-int main() {
-    test_uart_loopback();
-    return 0;
-}
