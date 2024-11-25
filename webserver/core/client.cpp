@@ -56,10 +56,10 @@ int uart_listening = -1; // Flag for listening UART
 char log_msg[1000];
 
 // UART Initialize
-void uart_init(const char* device) {
+void uart_init(uint8_t* device) {
     if(global_uart_fd < 0) {
         // Initialize UART Connection
-        global_uart_fd = open(device, O_RDWR | O_NOCTTY | O_NDELAY);
+        global_uart_fd = open(device, O_RDWR | O_NOCTTY);
         sprintf(log_msg, "UART: Connection Initialize: => %d\n", global_uart_fd);
         log(log_msg);
         if (global_uart_fd < 0) {
@@ -91,44 +91,29 @@ void uart_init(const char* device) {
         // Set UART attributes
         tcsetattr(global_uart_fd, TCSANOW, &options);
 
-        fcntl(global_uart_fd, F_SETFL, 0);
         // Initialize the mutex
         pthread_mutex_init(&uart_mutex, NULL);
     }
 }
 
 /** UART Communication Block */
-int uart_send(const char* message, const char* device) {
+int uart_send(uint8_t* message, uint8_t* device) {
     if (global_uart_fd < 0) {
         uart_init(device);
     }
     
     if (global_uart_fd >= 0) {
-        int retries = 5;
-        while (retries > 0) {
-            int bytes_written = write(global_uart_fd, message, strlen(message));
-            if (bytes_written < 0) {
-                if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                    // Non-blocking mode - no data available
-                    sprintf(log_msg, "UART: Write would block, retrying...\n");
-                    log(log_msg);
-                    usleep(100000); // Sleep for 100ms before retrying
-                    retries--;
-                } else {
-                    perror("Error writing to UART device");
-                    sprintf(log_msg, "UART: Error writing to device: => %d, errno: %d\n", global_uart_fd, errno);
-                    log(log_msg);
-                    return -1;
-                }
-            } else {
-                sprintf(log_msg, "UART: Sent %d bytes: => %s\n", bytes_written, message);
-                log(log_msg);
-                return bytes_written;
-            }
+        int bytes_written = write(global_uart_fd, message, strlen(message));
+        if (bytes_written < 0) {
+            perror("Error writing to UART device");
+            sprintf(log_msg, "UART: Error writing to device: => %d, errno: %d\n", global_uart_fd, errno);
+            log(log_msg);
+            return -1;
+        } else {
+            sprintf(log_msg, "UART: Sent %d bytes: => %s\n", bytes_written, message);
+            log(log_msg);
+            return bytes_written;
         }
-        sprintf(log_msg, "UART: Failed to write after retries\n");
-        log(log_msg);
-        return -1;
     } else {
         sprintf(log_msg, "UART: Device not initialized: => %d\n", global_uart_fd);
         log(log_msg);
@@ -144,21 +129,20 @@ void *uart_listener_thread(void *arg) {
         if (bytes_read > 0) {
             buffer[bytes_read] = '\0'; // Null-terminate the received string
             pthread_mutex_lock(&uart_mutex);
-            strncpy((char*)inputData, buffer, sizeof(inputData) - 1);
+            strncpy(inputData, buffer, sizeof(inputData) - 1);
             inputData[sizeof(inputData) - 1] = '\0'; // Safety null-termination
             dataReady = 1; // Set flag to indicate data is ready
             pthread_mutex_unlock(&uart_mutex);
+            sprintf(log_msg, "UART: Received %d bytes: => %s\n", bytes_read, buffer);
+            log(log_msg);
+            printf("UART: Received %d bytes: => %s\n", bytes_read, buffer); // Print received message
         } else if (bytes_read < 0) {
-            if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                // Non-blocking mode - no data available
-                sprintf(log_msg, "UART: Read would block, retrying...\n");
-                log(log_msg);
-                usleep(100000); // Sleep for 100ms before retrying
-            } else {
-                perror("Error reading from UART device");
-                sprintf(log_msg, "UART: Error reading from device: => %d, errno: %d\n", global_uart_fd, errno);
-                log(log_msg);
-            }
+            perror("Error reading from UART device");
+            sprintf(log_msg, "UART: Error reading from device: => %d, errno: %d\n", global_uart_fd, errno);
+            log(log_msg);
+        } else {
+            sprintf(log_msg, "UART: No data received\n");
+            log(log_msg);
         }
         usleep(1000); // Short sleep to avoid busy waiting
     }
@@ -171,13 +155,13 @@ void start_uart_thread() {
     if (pthread_create(&thread_id, NULL, uart_listener_thread, NULL) != 0) {
         perror("Failed to create UART listener thread");
         uart_listening = -1;
-    } else {
-        uart_listening = 0; // Set flag to indicate UART listening
     }
+
+    uart_listening = 0; // Set flag to indicate UART listening
 }
 
 // Process Data Received From UART
-void uart_listen(const char* device) {
+int uart_listen(uint8_t* device, uint8_t* message, size_t buffer_size) {
     if(global_uart_fd < 0) {
         uart_init(device);
     }
@@ -187,15 +171,21 @@ void uart_listen(const char* device) {
    // Print buffer contents (example processing)
     pthread_mutex_lock(&uart_mutex);
     if (dataReady) {
-        sprintf(log_msg, "Received UART Data: => %s\n", inputData);
+        strncpy(message, inputData, buffer_size - 1);
+        message[buffer_size - 1] = '\0'; // Safety null-termination
+        sprintf(log_msg, "Received UART Data: => %s\n", message);
         log(log_msg);
-        printf("Received UART Data: %s\n", inputData);
+        printf("Received UART Data: %s\n", message);
         dataReady = 0; // Reset flag after processing
+    } else {
+        sprintf(log_msg, "No new data available\n");
+        log(log_msg);
     }
     pthread_mutex_unlock(&uart_mutex);
+    return 0;
 }
 
-int receive_uart_communication(const char* device, char* message, size_t buffer_size) {
+int receive_uart_communication(uint8_t* device, uint8_t* message, size_t buffer_size) {
     if(serial_fd < 0) {
         serial_fd = open(device, O_RDWR | O_NOCTTY | O_NDELAY);
     } 
@@ -228,7 +218,7 @@ int receive_uart_communication(const char* device, char* message, size_t buffer_
     return bytes_read;
 }
 
-int connect_to_tcp_server(const char *ip_address, uint16_t port, int method)
+int connect_to_tcp_server(uint8_t *ip_address, uint16_t port, int method)
 {
     int sockfd, connfd;
     char log_msg[1000];
@@ -280,7 +270,7 @@ int connect_to_tcp_server(const char *ip_address, uint16_t port, int method)
     return sockfd;
 }
 
-int send_tcp_message(const char *msg, size_t msg_size, int socket_id)
+int send_tcp_message(uint8_t *msg, size_t msg_size, int socket_id)
 {
     int bytes_sent = 0;
     char log_msg[1000];
@@ -295,7 +285,7 @@ int send_tcp_message(const char *msg, size_t msg_size, int socket_id)
     return bytes_sent;
 }
 
-int receive_tcp_message(char *msg_buffer, size_t buffer_size, int socket_id)
+int receive_tcp_message(uint8_t *msg_buffer, size_t buffer_size, int socket_id)
 {
     int bytes_received = 0;
     char log_msg[1000];
