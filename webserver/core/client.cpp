@@ -140,6 +140,9 @@ void *uart_listener_thread(void *arg) {
             perror("Error reading from UART device");
             sprintf(log_msg, "UART: Error reading from device: => %d, errno: %d\n", global_uart_fd, errno);
             log(log_msg);
+        } else {
+            sprintf(log_msg, "UART: No data received\n");
+            log(log_msg);
         }
         usleep(1000); // Short sleep to avoid busy waiting
     }
@@ -174,6 +177,9 @@ int uart_listen(uint8_t* device, uint8_t* message, size_t buffer_size) {
         log(log_msg);
         printf("Received UART Data: %s\n", message);
         dataReady = 0; // Reset flag after processing
+    } else {
+        sprintf(log_msg, "No new data available\n");
+        log(log_msg);
     }
     pthread_mutex_unlock(&uart_mutex);
     return 0;
