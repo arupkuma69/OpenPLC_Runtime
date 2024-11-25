@@ -104,24 +104,31 @@ int uart_send(uint8_t* message, uint8_t* device) {
     }
     
     if (global_uart_fd >= 0) {
-        int bytes_written = write(global_uart_fd, message, strlen(message));
-        if (bytes_written < 0) {
-            if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                // Non-blocking mode - no data available
-                sprintf(log_msg, "UART: Write would block, try again later\n");
-                log(log_msg);
-                return 0;
+        int retries = 5;
+        while (retries > 0) {
+            int bytes_written = write(global_uart_fd, message, strlen(message));
+            if (bytes_written < 0) {
+                if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                    // Non-blocking mode - no data available
+                    sprintf(log_msg, "UART: Write would block, retrying...\n");
+                    log(log_msg);
+                    usleep(100000); // Sleep for 100ms before retrying
+                    retries--;
+                } else {
+                    perror("Error writing to UART device");
+                    sprintf(log_msg, "UART: Error writing to device: => %d, errno: %d\n", global_uart_fd, errno);
+                    log(log_msg);
+                    return -1;
+                }
             } else {
-                perror("Error writing to UART device");
-                sprintf(log_msg, "UART: Error writing to device: => %d, errno: %d\n", global_uart_fd, errno);
+                sprintf(log_msg, "UART: Sent %d bytes: => %s\n", bytes_written, message);
                 log(log_msg);
-                return -1;
+                return bytes_written;
             }
-        } else {
-            sprintf(log_msg, "UART: Sent %d bytes: => %s\n", bytes_written, message);
-            log(log_msg);
-            return bytes_written;
         }
+        sprintf(log_msg, "UART: Failed to write after retries\n");
+        log(log_msg);
+        return -1;
     } else {
         sprintf(log_msg, "UART: Device not initialized: => %d\n", global_uart_fd);
         log(log_msg);
@@ -144,8 +151,9 @@ void *uart_listener_thread(void *arg) {
         } else if (bytes_read < 0) {
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
                 // Non-blocking mode - no data available
-                sprintf(log_msg, "UART: Read would block, try again later\n");
+                sprintf(log_msg, "UART: Read would block, retrying...\n");
                 log(log_msg);
+                usleep(100000); // Sleep for 100ms before retrying
             } else {
                 perror("Error reading from UART device");
                 sprintf(log_msg, "UART: Error reading from device: => %d, errno: %d\n", global_uart_fd, errno);
