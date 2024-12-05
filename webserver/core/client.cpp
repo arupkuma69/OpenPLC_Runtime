@@ -67,7 +67,7 @@ void uart_init(uint8_t* device) {
         log(log_msg);
         if (global_uart_fd < 0) {
             perror("Error opening UART device");
-            sprintf(log_msg, "UART: Connection Failed: => %d\n", global_uart_fd);
+            sprintf(log_msg, "UART: Connection Failed: => %d, Error: %s\n", global_uart_fd, strerror(errno));
             log(log_msg);
             return;
         }
@@ -107,7 +107,7 @@ int uart_send(uint8_t* message, uint8_t* device) {
     int bytes_written = write(global_uart_fd, buffer, strlen(buffer));
     if (bytes_written < 0) {
         perror("UART write failed");
-        sprintf(log_msg, "UART: Write Failed: => %d\n", bytes_written);
+        sprintf(log_msg, "UART: Write Failed: => %d, Error: %s\n", bytes_written, strerror(errno));
         log(log_msg);
     } else {
         sprintf(log_msg, "UART: Sent %d bytes: %s\n", bytes_written, buffer);
@@ -121,16 +121,22 @@ void *uart_listener_thread(void *arg) {
     char buffer[256];
     while (1) {
         int bytes_read = read(global_uart_fd, buffer, sizeof(buffer) - 1);
-        sprintf(log_msg, "UART: Connection Receive: => %d\n", bytes_read);
-        log(log_msg);
-        if (bytes_read > 0) {
-            buffer[bytes_read] = '\0'; // Null-terminate the received string
-            // Lock the mutex to update shared data
-            pthread_mutex_lock(&uart_mutex);
-            strncpy(inputData, buffer, sizeof(inputData) - 1);
-            inputData[sizeof(inputData) - 1] = '\0'; // Safety null-termination
-            dataReady = 1; // Set flag to indicate data is ready
-            pthread_mutex_unlock(&uart_mutex);
+        if (bytes_read < 0) {
+            perror("UART read failed");
+            sprintf(log_msg, "UART: Connection Receive: => %d, Error: %s\n", bytes_read, strerror(errno));
+            log(log_msg);
+        } else {
+            sprintf(log_msg, "UART: Connection Receive: => %d\n", bytes_read);
+            log(log_msg);
+            if (bytes_read > 0) {
+                buffer[bytes_read] = '\0'; // Null-terminate the received string
+                // Lock the mutex to update shared data
+                pthread_mutex_lock(&uart_mutex);
+                strncpy(inputData, buffer, sizeof(inputData) - 1);
+                inputData[sizeof(inputData) - 1] = '\0'; // Safety null-termination
+                dataReady = 1; // Set flag to indicate data is ready
+                pthread_mutex_unlock(&uart_mutex);
+            }
         }
         usleep(1000); // Short sleep to avoid busy waiting
     }
@@ -176,7 +182,7 @@ int receive_uart_communication(uint8_t* device, uint8_t* message, size_t buffer_
     }
     if (serial_fd == -1) {
         perror("Unable to open serial port");
-        sprintf(log_msg, "UART: Unable to open serial port\n");
+        sprintf(log_msg, "UART: Unable to open serial port, Error: %s\n", strerror(errno));
         log(log_msg);
         exit(1);
     }
@@ -202,7 +208,7 @@ int receive_uart_communication(uint8_t* device, uint8_t* message, size_t buffer_
     int bytes_read = read(serial_fd, message, buffer_size);
     if (bytes_read < 0) {
         perror("UART read failed");
-        sprintf(log_msg, "UART: Read Failed: => %d\n", bytes_read);
+        sprintf(log_msg, "UART: Read Failed: => %d, Error: %s\n", bytes_read, strerror(errno));
         log(log_msg);
         return -1;
     }
@@ -226,6 +232,7 @@ int receive_uart_communication(uint8_t* device, uint8_t* message, size_t buffer_
 
     return bytes_read;
 }
+
 
 int connect_to_tcp_server(uint8_t *ip_address, uint16_t port, int method)
 {
