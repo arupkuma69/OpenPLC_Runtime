@@ -227,28 +227,6 @@ int receive_uart_communication(uint8_t* device, uint8_t* message, size_t buffer_
     return bytes_read;
 }
 
-int main() {
-    uint8_t device[] = "/dev/serial0";  // Replace with your actual device path
-    uint8_t message[] = "AT+SEND=8,10,hello arup";
-
-    int fd = uart_send(message, device);
-    if (fd < 0) {
-        printf("Failed to send message\n");
-    } else {
-        printf("Message sent successfully\n");
-    }
-
-    uint8_t recv_message[256];
-    int bytes_received = receive_uart_communication(device, recv_message, sizeof(recv_message));
-    if (bytes_received < 0) {
-        printf("Failed to receive message\n");
-    } else {
-        printf("Message received successfully\n");
-    }
-
-    return 0;
-}
-
 int connect_to_tcp_server(uint8_t *ip_address, uint16_t port, int method)
 {
     int sockfd, connfd;
