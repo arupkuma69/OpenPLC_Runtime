@@ -49,13 +49,26 @@ pthread_mutex_t uart_mutex;
 char inputData[256];
 int dataReady = 0;
 int uart_listening = -1;
+char log_msg[1000];
+
+void log(const char* message) {
+    FILE* log_file = fopen("uart_log.txt", "a");
+    if (log_file != NULL) {
+        fprintf(log_file, "%s", message);
+        fclose(log_file);
+    }
+}
 
 void uart_init(uint8_t* device) {
     if (global_uart_fd < 0) {
         // Initialize UART Connection
         global_uart_fd = open((char*)device, O_RDWR | O_NOCTTY | O_NDELAY);
+        sprintf(log_msg, "UART: Connection Initialize: => %d\n", global_uart_fd);
+        log(log_msg);
         if (global_uart_fd < 0) {
             perror("Error opening UART device");
+            sprintf(log_msg, "UART: Connection Failed: => %d\n", global_uart_fd);
+            log(log_msg);
             return;
         }
 
@@ -76,7 +89,6 @@ void uart_init(uint8_t* device) {
     }
 }
 
-/** UART Communication Block */
 int uart_send(uint8_t* message, uint8_t* device) {
     char appendStr[] = "\r\n"; 
     char buffer[256];
@@ -95,18 +107,22 @@ int uart_send(uint8_t* message, uint8_t* device) {
     int bytes_written = write(global_uart_fd, buffer, strlen(buffer));
     if (bytes_written < 0) {
         perror("UART write failed");
+        sprintf(log_msg, "UART: Write Failed: => %d\n", bytes_written);
+        log(log_msg);
     } else {
-        printf("Sent %d bytes: %s\n", bytes_written, buffer);
+        sprintf(log_msg, "UART: Sent %d bytes: %s\n", bytes_written, buffer);
+        log(log_msg);
     }
 
     return global_uart_fd;
 }
 
-// Listen to UART 
 void *uart_listener_thread(void *arg) {
     char buffer[256];
     while (1) {
         int bytes_read = read(global_uart_fd, buffer, sizeof(buffer) - 1);
+        sprintf(log_msg, "UART: Connection Receive: => %d\n", bytes_read);
+        log(log_msg);
         if (bytes_read > 0) {
             buffer[bytes_read] = '\0'; // Null-terminate the received string
             // Lock the mutex to update shared data
@@ -121,7 +137,6 @@ void *uart_listener_thread(void *arg) {
     return NULL;
 }
 
-// UART Listen Thread
 void start_uart_thread() {
     pthread_t thread_id;
     if (pthread_create(&thread_id, NULL, uart_listener_thread, NULL) != 0) {
@@ -132,8 +147,6 @@ void start_uart_thread() {
     }
 }
 
-
-// Process Data Received From UART
 char* uart_listen(uint8_t* device, uint8_t* message, size_t buffer_size) {
     if (global_uart_fd < 0) {
         uart_init(device);
@@ -163,6 +176,8 @@ int receive_uart_communication(uint8_t* device, uint8_t* message, size_t buffer_
     }
     if (serial_fd == -1) {
         perror("Unable to open serial port");
+        sprintf(log_msg, "UART: Unable to open serial port\n");
+        log(log_msg);
         exit(1);
     }
     struct termios options;
@@ -187,29 +202,51 @@ int receive_uart_communication(uint8_t* device, uint8_t* message, size_t buffer_
     int bytes_read = read(serial_fd, message, buffer_size);
     if (bytes_read < 0) {
         perror("UART read failed");
+        sprintf(log_msg, "UART: Read Failed: => %d\n", bytes_read);
+        log(log_msg);
         return -1;
     }
 
     // Null-terminate the received message
     message[bytes_read] = 0;
 
-    printf("Received %d bytes: %s\n", bytes_read, message);
+    sprintf(log_msg, "UART: Received %d bytes: %s\n", bytes_read, message);
+    log(log_msg);
 
     // Parse the received message
     int address, length, rssi, snr;
     char data[256];
     if (sscanf((char*)message, "+RCV=%d,%d,%255[^,],%d,%d", &address, &length, data, &rssi, &snr) == 5) {
-        printf("Parsed Data:\n");
-        printf("Address: %d\n", address);
-        printf("Length: %d\n", length);
-        printf("Data: %s\n", data);
-        printf("RSSI: %d\n", rssi);
-        printf("SNR: %d\n", snr);
+        sprintf(log_msg, "Parsed Data:\nAddress: %d\nLength: %d\nData: %s\nRSSI: %d\nSNR: %d\n", address, length, data, rssi, snr);
+        log(log_msg);
     } else {
-        printf("Failed to parse received message\n");
+        sprintf(log_msg, "Failed to parse received message\n");
+        log(log_msg);
     }
 
     return bytes_read;
+}
+
+int main() {
+    uint8_t device[] = "/dev/serial0";  // Replace with your actual device path
+    uint8_t message[] = "AT+SEND=8,10,hello arup";
+
+    int fd = uart_send(message, device);
+    if (fd < 0) {
+        printf("Failed to send message\n");
+    } else {
+        printf("Message sent successfully\n");
+    }
+
+    uint8_t recv_message[256];
+    int bytes_received = receive_uart_communication(device, recv_message, sizeof(recv_message));
+    if (bytes_received < 0) {
+        printf("Failed to receive message\n");
+    } else {
+        printf("Message received successfully\n");
+    }
+
+    return 0;
 }
 
 int connect_to_tcp_server(uint8_t *ip_address, uint16_t port, int method)
