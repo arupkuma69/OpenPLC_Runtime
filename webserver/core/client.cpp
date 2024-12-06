@@ -62,7 +62,7 @@ void log(const char* message) {
 void uart_init(uint8_t* device) {
     if (global_uart_fd < 0) {
         // Initialize UART Connection
-        global_uart_fd = open((char*)device, O_RDWR | O_NOCTTY | O_NDELAY);
+        global_uart_fd = open((char*)device, O_RDWR | O_NOCTTY);
         sprintf(log_msg, "UART: Connection Initialize: => %d\n", global_uart_fd);
         log(log_msg);
         if (global_uart_fd < 0) {
@@ -178,7 +178,7 @@ char* uart_listen(uint8_t* device, uint8_t* message, size_t buffer_size) {
 
 int receive_uart_communication(uint8_t* device, uint8_t* message, size_t buffer_size) {
     if (serial_fd < 0) {
-        serial_fd = open((char*)device, O_RDWR | O_NOCTTY | O_NDELAY);
+        serial_fd = open((char*)device, O_RDWR | O_NOCTTY);
     }
     if (serial_fd == -1) {
         perror("Unable to open serial port");
@@ -232,7 +232,6 @@ int receive_uart_communication(uint8_t* device, uint8_t* message, size_t buffer_
 
     return bytes_read;
 }
-
 
 int connect_to_tcp_server(uint8_t *ip_address, uint16_t port, int method)
 {
